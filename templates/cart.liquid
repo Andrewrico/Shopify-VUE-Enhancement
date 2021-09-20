@@ -1,34 +1,36 @@
+{% include 'store.js' %}
+
 <div id="cart-page" class="cart-page container">
   <div class="cart-section">
     
     <div class="cart-table">
-      
-        
-          {% if cart.items.size > 0 %}
-            {% for item in cart.items %}
-              <div class="cart-row">
-                <div class="cart-item-title">{{ item.title }}</div>
-                <img src="{{ item.image | img_url: '400x', scale: 2 }} }}">
-                <div>
-                  <div class="cart-item-price">{{ item.final_line_price | money }}</div>
-                  <label>
-                    Qty
-                    <input type="number" class="cart-item-qty" value="{{ item.quantity }}">
-                  </label>
-                </div>
-                <div class="cart-item-remove"><img src="{{ 'icon-trash.svg' | asset_url }}"></div>
+      <transition name="fade">
+        <div v-show="!loading">
+          <template v-if="cart.items.length > 0">
+            <div class="cart-row" v-for="item in cart.items">
+              <div class="cart-item-title" v-html="item.title"></div>
+              <img :src="item.image">
+              <div>
+                <div class="cart-item-price" v-html="item.formatted_line_price"></div>
+                <label>
+                  Qty
+                  <input type="number" class="cart-item-qty" v-model="item.quantity" @change="update_cart(item.variant_id, item.quantity)">
+                </label>
               </div>
-            {% endfor %}
-          {% else %}
+              <div class="cart-item-remove" @click="remove_from_cart(item.variant_id)"><img src="{{ 'icon-trash.svg' | asset_url }}"></div>
+            </div>
+          </template>
+          <template v-else>
             Your cart is currently empty
-          {% endif %}
-      
+          </template>
+        </div>
+      </transition>
     </div>
 
     <div class="cart-sidebar">
       <div class="cart-sidebar-top">
         <h2>Your total</h2>
-        <div class="cart-total">{{ cart.total_price | money }}</div>
+        <div class="cart-total" v-html="cart.formatted_total_price"></div>
       </div>
       <a href="/checkout" class="checkout-btn">
         Checkout
@@ -36,20 +38,82 @@
     </div>
   </div>
 
-  {% if collections['shoes'].products.size > 0 %}
-    <div class="cart-upsells">
+    <div class="cart-upsells" v-if="filtered_upsells.length > 0">
       <h2>You might also like...</h2>
       
         <div class="cart-upsells-grid">
-          {% for product in collections['shoes'].products limit:4 %}
-            <div class="cart-upsell-item">
-              <div class="cart-upsell-title">{{ product.title }}</div>
-              <img class="cart-upsell-item-image" src="{{ product.featured_image | img_url: '400x', scale: 2 }}">
-              <a class="cart-upsell-atc-btn">Add to cart</a>
+          <template v-for="(upsell, index) in filtered_upsells">
+            <div class="cart-upsell-item" v-if="index < 4">
+              <div class="cart-upsell-title" v-html="upsell.title"></div>
+              <img class="cart-upsell-item-image" :src="upsell.image">
+              <a v-if="upsell.adding_upsell" class="cart-upsell-atc-btn cart-upsell-atc-btn--adding">Adding...</a>
+              <a v-else class="cart-upsell-atc-btn" @click="add_to_cart(upsell.variant_id)">Add to cart</a>
             </div>
-          {% endfor %}
+          </template>
         </div>
     </div>
-  {% endif %}
   
 </div>
+
+<script>
+  const CartPageOptions = {
+    name: 'Cart',
+    store,
+    data() {
+      return {
+        upsells: [
+          {% for product in collections['shoes'].products %}
+            {
+              title: "{{ product.title }}",
+              handle: "{{ product.handle }}",
+              image: "{{ product.featured_image | img_url: '400x', scale: 2 }}",
+              product_id: "{{ product.id }}",
+              variant_id: "{{ product.selected_or_first_available_variant.id }}",
+              adding_upsell: false
+            },
+          {% endfor %}
+        ],
+        loading: true
+      }
+    },
+    created() {
+      store.dispatch('get_cart').then(() => this.loading = false);
+    },
+    computed: {
+      cart() {
+        return store.state.cart;
+      },
+      filtered_upsells() {
+        const products_in_cart = store.state.cart.items.map(item => item.product_id.toString());
+        return this.upsells.filter(upsell => !products_in_cart.includes(upsell.product_id));
+      }
+    },
+    methods: {
+      update_cart(id, qty) {
+        store.dispatch('update_cart', {id, qty});
+      },
+      add_to_cart(id) {
+        const upsell = this.upsells.find(upsell => upsell.variant_id == id);
+        this.loading = true;
+        upsell.adding_upsell = true;
+
+        store.dispatch('add_to_cart', id)
+        .then(() => {
+          this.loading = false;
+          upsell.adding_upsell = false;
+        }) 
+        
+      },
+      remove_from_cart(id) {
+        this.loading = true;
+        const qty = 0;
+        store.dispatch('update_cart', {id, qty})
+        .then(() => this.loading = false);
+      }
+    }
+  }
+
+  const CartPage = Vue.createApp(CartPageOptions)
+  CartPage.mount('#cart-page');
+  CartPage.use(store);
+</script>
